@@ -39,7 +39,7 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %% 添加任务
-add_job(F) ->
+add_job(F) when is_function(F) ->
     gen_server:call(?SERVER, {add_job, F});
 
 add_job([{M, F, A}]) ->
@@ -56,29 +56,30 @@ job_done(N) ->
 %%%-------------------------------------------------------------------
 %%% Callback Functions
 %%%-------------------------------------------------------------------
-init() ->
+init([]) ->
     ok = lib_worker:create_workers(),
     erlang:send_after(?INTERVAL, self(), {check_jobs}), 
+    io:format("init the job_center...", []),
     {ok, #job_queue{}}.
 
-handle_call(_Request, _From, State) ->
-    {reply, {ok, 0}, State}.
-
-handle_call({add_job, F}, State = #job_queue{w_list = List, reque_list = RequestList}) ->
+handle_call({add_job, F}, _From, State = #job_queue{w_list = List, reque_list = RequestList}) ->
     Task = add_new_task(F, List),
     TaskList = [Task|List],
     {NewTaskList, NewRequestList} = check_have_request(TaskList, RequestList),
     NewState = State#job_queue{w_list = NewTaskList, reque_list = NewRequestList},
     {reply, Task#w_task.number, NewState};
 
-handle_call({add_job, [{M, F, A}]}, State = #job_queue{w_list = List, reque_list = RequestList}) ->
+handle_call({add_job, [{M, F, A}]}, _From, State = #job_queue{w_list = List, reque_list = RequestList}) ->
     Task = add_new_task([{M, F, A}], List),
     TaskList = [Task|List],
     {NewTaskList, NewRequestList} = check_have_request(TaskList, RequestList),
-    {reply, Task#w_task.number, State#job_queue{w_list = NewTaskList, reque_list = NewRequestList}}.
+    {reply, Task#w_task.number, State#job_queue{w_list = NewTaskList, reque_list = NewRequestList}};
+
+handle_call(_Request, _From, State) ->
+    {reply, {ok, 0}, State}.
 
 handle_cast({job_wanted, [Id]}, State) ->
-    State =  = #job_queue{w_list = List, reque_list = RequestList},
+    #job_queue{w_list = List, reque_list = RequestList} = State,
     case check_job_rest(List, []) of
         {true, Task = #w_task{}} ->
             case check_request(Id, RequestList) of
@@ -89,13 +90,13 @@ handle_cast({job_wanted, [Id]}, State) ->
                 _ -> %% 列表中还有人比他早请求
                     NewTask = Task,
                     NewRequestList = RequestList
-            end;
+            end,
+            NewList = lists:keyreplace(Task#w_task.number, #w_task.number, List, NewTask),
+            State1 = State#job_queue{w_list = NewList, reque_list = NewRequestList};
         _ -> %% 没有需要分配的任务,将请求添加到列表中
             NewRequestList = update_request_list(Id, RequestList),
-            NewTask = Task
+            State1 = State#job_queue{reque_list = NewRequestList}
     end,
-    NewList = lists:keyreplace(Task#w_task.number, #w_task.number, List, NewTask),
-    State1 = State#job_queue{w_list = NewList, reque_list = NewRequestList},
     {noreply, State1};
 
 handle_cast({job_done, [N]}, State = #job_queue{w_list = List}) ->
@@ -146,7 +147,7 @@ add_new_task([{M, F, A = [_|_]}], List) ->
     }.
 
 create_new_num([]) -> 1;
-create_new_num(List = [Head = #w_task{number = Num}|_]) ->
+create_new_num(List = [#w_task{number = Num}|_]) ->
     Max = max_num(List, Num),
     Max + 1.
 
@@ -179,23 +180,23 @@ check_request(Id, List) ->
     end.
 
 get_min(task, TaskList) ->
-    NewList = lists:sort(fun(#w_task{time = T1}, #w_task{time = T2}) -> T1 < T2 end, List),
+    NewList = lists:sort(fun(#w_task{time = T1}, #w_task{time = T2}) -> T1 < T2 end, TaskList),
     case NewList of
         [_|_] -> hd(NewList);
         _     -> []
     end;
 get_min(reque, List) ->
-    NewList = lists:sort(fun({Id1, T1}, {Id2, T2}) -> T1 < T2 end, List),
+    NewList = lists:sort(fun({_Id1, T1}, {_Id2, T2}) -> T1 < T2 end, List),
     case NewList of
         [_|_] -> hd(NewList);
         _     -> []
-    end;
+    end.
 
 check_have_request(TaskList, []) ->
     {TaskList, []};
 check_have_request(TaskList, RequestList) ->
     List1 = filter_doing_task(TaskList, []),
-    Task = get_min(List1),
+    Task = get_min(task, List1),
     case Task of
         #w_task{} ->
             case get_min(reque, RequestList) of
@@ -213,6 +214,7 @@ check_have_request(TaskList, RequestList) ->
     end.
 
 filter_doing_task([], Sofar) -> Sofar;
-filter_doing_task([Task = #w_task{state = ?Rest}|Rest], Sofar) ->
+filter_doing_task([Task = #w_task{state = ?REST}|Rest], Sofar) ->
     filter_doing_task(Rest, [Task|Sofar]);
-filter_doing_task([_|Rest], Sofar) -> Sofar.
+filter_doing_task([_|Rest], Sofar) -> 
+    filter_doing_task(Rest, Sofar).

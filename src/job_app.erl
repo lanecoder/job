@@ -1,4 +1,4 @@
--module(ballgame_app).
+-module(job_app).
 
 -behaviour(application).
 
@@ -8,6 +8,7 @@
     ).
 
 start(_Type,_StartArg) ->
+    io:format("app start...", []),
 	job_supervisor:start_link().
 
 stop(_State) ->

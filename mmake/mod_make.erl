@@ -27,7 +27,7 @@ all(Worker, Options) when is_integer(Worker) ->
     case read_emakefile('Emakefile', CompileOpts) of
         Files when is_list(Files) ->
             do_make_files(Worker, Files, MakeOpts),
-            io:format("@@@@@@@@@@@@@@       finish compile   @@@@@@@@@@@@@@@@@~n");
+            io:format("##############    finish compile   ###############~n");
         error ->
             error
     end,

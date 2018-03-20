@@ -6,7 +6,7 @@
 -module(misc).
 -compile(export_all).
 
-process_name(N)
+process_name(N) ->
     list_to_atom(list:concat("worker", integer_to_list(N))).
 
 register_pid(Pid, N) ->

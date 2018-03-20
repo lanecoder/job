@@ -1,4 +1,4 @@
--module(ballgame_supervisor).
+-module(job_supervisor).
 
 -behaviour(supervisor).
 
