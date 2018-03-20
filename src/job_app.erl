@@ -4,10 +4,11 @@
 
 -export([
     start/2,
-    stop/1]
+    stop/1
+    ]
     ).
 
-start(_Type,_StartArg) ->
+start(_Type, _StartArg) ->
     io:format("app start...", []),
 	job_supervisor:start_link().
 

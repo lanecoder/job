@@ -7,7 +7,7 @@
 -compile(export_all).
 
 process_name(N) ->
-    list_to_atom(list:concat("worker", integer_to_list(N))).
+    list_to_atom(lists:concat(["worker_", integer_to_list(N)])).
 
 register_pid(Pid, N) ->
     Name = process_name(N),
@@ -45,3 +45,6 @@ unixtime() ->
 send_to_id(Id, Msg) ->
     Pid = get_worker_process(Id),
     Pid ! Msg.
+
+print(Module, Line, Args) ->
+    io:format("~p ~p ~p ~n", [Module, Line, Args]).

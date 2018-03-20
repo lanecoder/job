@@ -59,21 +59,24 @@ job_done(N) ->
 init([]) ->
     ok = lib_worker:create_workers(),
     erlang:send_after(?INTERVAL, self(), {check_jobs}), 
-    io:format("init the job_center...", []),
+    io:format("init the job_center... ~n", []),
     {ok, #job_queue{}}.
 
-handle_call({add_job, F}, _From, State = #job_queue{w_list = List, reque_list = RequestList}) ->
+handle_call({add_job, [{M, F, A}]}, _From, State = #job_queue{w_list = List, reque_list = RequestList}) ->
+    Task = add_new_task([{M, F, A}], List),
+    TaskList = [Task|List],
+    misc:print(?MODULE, ?LINE, RequestList),
+    {NewTaskList, NewRequestList} = check_have_request(TaskList, RequestList),
+    {reply, Task#w_task.number, State#job_queue{w_list = NewTaskList, reque_list = NewRequestList}};
+
+
+handle_call({add_job, F}, _From, State = #job_queue{w_list = List, reque_list = RequestList})
+    when is_function(F) ->
     Task = add_new_task(F, List),
     TaskList = [Task|List],
     {NewTaskList, NewRequestList} = check_have_request(TaskList, RequestList),
     NewState = State#job_queue{w_list = NewTaskList, reque_list = NewRequestList},
     {reply, Task#w_task.number, NewState};
-
-handle_call({add_job, [{M, F, A}]}, _From, State = #job_queue{w_list = List, reque_list = RequestList}) ->
-    Task = add_new_task([{M, F, A}], List),
-    TaskList = [Task|List],
-    {NewTaskList, NewRequestList} = check_have_request(TaskList, RequestList),
-    {reply, Task#w_task.number, State#job_queue{w_list = NewTaskList, reque_list = NewRequestList}};
 
 handle_call(_Request, _From, State) ->
     {reply, {ok, 0}, State}.
@@ -83,9 +86,13 @@ handle_cast({job_wanted, [Id]}, State) ->
     case check_job_rest(List, []) of
         {true, Task = #w_task{}} ->
             case check_request(Id, RequestList) of
+                true when RequestList =:= [] ->
+                    NewTask = Task#w_task{worker = Id, state = ?DOING},
+                    NewRequestList = RequestList,
+                    lib_worker:event(Id, {have_job, {Task#w_task.number, Task}});                    
                 true ->
                     NewTask = Task#w_task{worker = Id, state = ?DOING},
-                    NewRequestList = lists:keydelete(Id, RequestList),
+                    NewRequestList = lists:keydelete(Id, 1, RequestList),
                     lib_worker:event(Id, {have_job, {Task#w_task.number, Task}});
                 _ -> %% 列表中还有人比他早请求
                     NewTask = Task,
@@ -105,7 +112,7 @@ handle_cast({job_done, [N]}, State = #job_queue{w_list = List}) ->
         Task = #w_task{} ->
             NewTask = Task#w_task{worker = 0, state = ?DONE},
             NewList = lists:keyreplace(N, #w_task.number, List, NewTask),
-            State = State#job_queue{w_list = NewList};
+            State#job_queue{w_list = NewList};
         _ ->
             State
     end,
@@ -174,9 +181,13 @@ update_request_list(Id, List) ->
     end.
 
 check_request(Id, List) ->
-    {Id1, _} = get_min(reque, List),
-    if Id1 =:= Id -> true;
-        true -> false
+    case get_min(reque, List) of
+        {Id1, _} ->
+            if Id1 =:= Id -> true;
+                true -> false
+            end;
+        _ -> %% 空列表
+            true
     end.
 
 get_min(task, TaskList) ->
@@ -201,9 +212,10 @@ check_have_request(TaskList, RequestList) ->
         #w_task{} ->
             case get_min(reque, RequestList) of
                 {Id, _T} ->
+                    misc:print(?MODULE, ?LINE, Id),
                     NewTask = Task#w_task{state = ?DOING, worker = Id},
                     NewTaskList = lists:keyreplace(Task#w_task.number, #w_task.number, TaskList, NewTask),
-                    NewRequestList = lists:keydelete(Id, RequestList),
+                    NewRequestList = lists:keydelete(Id, 1, RequestList),
                     lib_worker:event(Id, {have_job, {Task#w_task.number, Task}}),
                     {NewTaskList, NewRequestList};
                 _ ->
