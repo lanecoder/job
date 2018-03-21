@@ -24,7 +24,8 @@
     start_link/0,
     add_job/1,
     job_wanted/1,
-    job_done/1
+    job_done/1,
+    statistics/0
     ]).
 
 -include("job.hrl").
@@ -52,6 +53,10 @@ job_wanted(Id) ->
 %% 完成任务
 job_done(N) ->
     gen_server:cast(?SERVER, {job_done, [N]}).
+
+%% 统计
+statistics() ->
+    gen_server:cast(?SERVER, {job_statistic}).
 
 %%%-------------------------------------------------------------------
 %%% Callback Functions
@@ -117,6 +122,10 @@ handle_cast({job_done, [N]}, State = #job_queue{w_list = List}) ->
             State
     end,
     {noreply, NewState};
+
+handle_cast({job_statistic}, State = #job_queue{w_list = List}) ->
+    print_out(List),
+    {noreply, State};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -230,3 +239,25 @@ filter_doing_task([Task = #w_task{state = ?REST}|Rest], Sofar) ->
     filter_doing_task(Rest, [Task|Sofar]);
 filter_doing_task([_|Rest], Sofar) -> 
     filter_doing_task(Rest, Sofar).
+
+print_out(List) ->
+    print_out_specific(?DOING, List),
+    print_out_specific(?REST, List),
+    print_out_specific(?DONE, List).
+
+
+print_out_specific(State, List) ->
+    PrintList = get_specific_task(State, List, []),
+    io:format("============== task state list ~p ================ ~n", [State]),
+    [
+        io:format("task id ~p create time ~p state ~p ~n", [N, T, S]) 
+    || #w_task{number = N, time = T, state = S} <- PrintList
+    ],
+    io:format("================================================== ~n", []).
+
+
+get_specific_task(_State, [], Sofar) -> Sofar;
+get_specific_task(State, [Task = #w_task{state = State}|Rest], Sofar) ->
+    get_specific_task(State, Rest, [Task|Sofar]);
+get_specific_task(State, [_|Rest], Sofar) ->
+    get_specific_task(State, Rest, Sofar).
